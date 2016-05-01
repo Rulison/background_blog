@@ -13,6 +13,9 @@ from scipy.stats import multivariate_normal
 
 parser = argparse.ArgumentParser(
     description="Run EM MoG model on image sequence")
+parser.add_argument('--image_root',
+    help="Directory where images to process are located")
+args = parser.parse_args()
 
 def read_images(imgpath_prefix):
     for img in os.listdir(imgpath_prefix):
@@ -52,6 +55,7 @@ def apply_background_subtractor(data, num_classes=3, prior_weight=3):
                                                 num_colors, num_colors))
     initialize_covariance(covariance)
     weights = (1 / float(num_classes)) * np.ones((num_classes, num_pixels))
+    normalized_likelihood = weights
 
     # Define constants for background fraction and decay rate
     background_fraction = 0.7
@@ -68,10 +72,10 @@ def apply_background_subtractor(data, num_classes=3, prior_weight=3):
         print(t)
         current_img = np.array(Image.open(data[t]).getdata())
         # Get the current image and compute likelihoods
-        pixels = np.array([current_img] * num_colors)
+        pixels = np.array([current_img] * num_classes)
         likelihood = weights * multivariate_normal_vec(pixels, mean,
                                                        covariance, num_colors)
-        normalized_likelihood = likelihood / likelihood.sum(axis=1)[:, np.newaxis]
+        normalized_likelihood = likelihood / likelihood.sum(axis=0)[np.newaxis, :]
         label_image(labels, weights, normalized_likelihood)
 
         # Update sufficient statistics
@@ -81,11 +85,13 @@ def apply_background_subtractor(data, num_classes=3, prior_weight=3):
              np.einsum('ijk,ijl->ijkl', pixels, pixels)
 
         # Recompute mean/covariance
-        weights = N / N.sum(axis=1)[:, np.newaxis]
+        weights = N / N.sum(axis=0)[np.newaxis, :]
         mean = M / N[:, :, np.newaxis]
         covariance = (1 / N[:, :, np.newaxis, np.newaxis]) * Z - np.einsum('ijk,ijl->ijkl', mean, mean)
 
     # Output foreground/background predictions
+    if not os.path.exists('output'):
+        os.mkdir('output')
     for i in range(len(labels)):
         labeled_img = labels[i]
         skio.imsave('output/img_{}.png'.format(i), labeled_img.reshape((720, 1280)) * 255)
@@ -93,10 +99,8 @@ def apply_background_subtractor(data, num_classes=3, prior_weight=3):
 def main():
     # Import ppm files as numpy array
     data = []
-    for img in os.listdir('img/'):
-        # data.append(Image.open('img/' + img))
-        data.append('img/' + img)
-    # data = np.array([np.array(img.getdata()) for img in data])
+    for img in os.listdir(args.image_root):
+        data.append(os.path.join(args.image_root, img))
     apply_background_subtractor(data) 
 
 if __name__ == '__main__':
