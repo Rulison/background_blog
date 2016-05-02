@@ -15,6 +15,8 @@ parser = argparse.ArgumentParser(
     description="Run EM MoG model on image sequence")
 parser.add_argument('--image_root',
     help="Directory where images to process are located")
+parser.add_argument('--output',
+    help="Directory to output results of processing")
 args = parser.parse_args()
 
 def read_images(imgpath_prefix):
@@ -42,11 +44,20 @@ def label_image(labels, weights, normalized_likelihood):
     diff[np.nonzero(diff)] = 1
     labels.append(diff)
 
+def save_images(labels, height, width):
+    if not os.path.exists(args.output):
+        os.mkdir(args.output)
+    for i in range(len(labels)):
+        labeled_img = labels[i]
+        skio.imsave(os.path.join(args.output, 'img_%d.png' % i),
+                    labeled_img.reshape((height, width)) * 255)
+
 def apply_background_subtractor(data, num_classes=3, prior_weight=3):
     # Initialize container variables with a slot for each label
-    sample_img = np.array(Image.open(data[0]).getdata())
-    num_pixels = sample_img.shape[0]
-    num_colors = sample_img.shape[1]
+    sample_img = Image.open(data[0])
+    width, height = sample_img.size[:2]
+    num_pixels = width * height
+    num_colors = len(sample_img.split())
     labels = []
 
     # Initialize mean and covariance randomly
@@ -55,7 +66,12 @@ def apply_background_subtractor(data, num_classes=3, prior_weight=3):
                                                 num_colors, num_colors))
     initialize_covariance(covariance)
     weights = (1 / float(num_classes)) * np.ones((num_classes, num_pixels))
-    normalized_likelihood = weights
+
+    # Transition matrix and prev_likelihood for basic temporal contiguity
+    TRANSITION_PROB = 0.6
+    prev_likelihood = weights
+    transition_matrix = TRANSITION_PROB * np.eye(num_classes)
+    transition_matrix[np.where(transition_matrix == 0)] = (1 - TRANSITION_PROB) / (num_classes - 1)
 
     # Define constants for background fraction and decay rate
     background_fraction = 0.7
@@ -75,7 +91,10 @@ def apply_background_subtractor(data, num_classes=3, prior_weight=3):
         pixels = np.array([current_img] * num_classes)
         likelihood = weights * multivariate_normal_vec(pixels, mean,
                                                        covariance, num_colors)
+        # Apply simple Markov Model for temporal contiguity
+        likelihood *= transition_matrix.dot(prev_likelihood)
         normalized_likelihood = likelihood / likelihood.sum(axis=0)[np.newaxis, :]
+        prev_likelihood = normalized_likelihood
         label_image(labels, weights, normalized_likelihood)
 
         # Update sufficient statistics
@@ -90,11 +109,7 @@ def apply_background_subtractor(data, num_classes=3, prior_weight=3):
         covariance = (1 / N[:, :, np.newaxis, np.newaxis]) * Z - np.einsum('ijk,ijl->ijkl', mean, mean)
 
     # Output foreground/background predictions
-    if not os.path.exists('output'):
-        os.mkdir('output')
-    for i in range(len(labels)):
-        labeled_img = labels[i]
-        skio.imsave('output/img_{}.png'.format(i), labeled_img.reshape((720, 1280)) * 255)
+    save_images(labels, height, width)
 
 def main():
     # Import ppm files as numpy array
