@@ -22,18 +22,26 @@ parser.add_argument('-s', '--shadow',
 					default=None)
 args = parser.parse_args()
 
+def simplify(x, foreground_color, shadow_color):
+	y = 1 if x == foreground_color else 0
+	y = 2 if shadow_color and x == shadow_color else y
+	return y
+
 def convert_image_to_mat(filepath, output_mat, index, foreground_color,  shadow_color=None):
 
 	img = imread(filepath)
-	label_mat = np.zeros(shape=(img.shape[0], img.shape[1]))
 
-	for i in range(label_mat.shape[0]):
-		for j in range(label_mat.shape[1]):
-			label_mat[i,j] = 1 if np.array_equal(img[i,j], np.array(foreground_color)) else 0
-			if(shadow_color):
-				label_mat[i,j] = 2 if np.array_equal(img[i,j], np.array(shadow_color)) else label_mat[i,j]
+	f = np.vectorize(simplify)
+	label_mat = f(img, foreground_color, shadow_color)
+	#label_mat = np.zeros(shape=(img.shape[0], img.shape[1]))
 
-	output_mat[:,:,index] = label_mat
+	#for i in range(label_mat.shape[0]):
+		#for j in range(label_mat.shape[1]):
+			#label_mat[i,j] = 1 if np.array_equal(img[i,j], np.array(foreground_color)) else 0
+			#if(shadow_color):
+				#label_mat[i,j] = 2 if np.array_equal(img[i,j], np.array(shadow_color)) else label_mat[i,j]
+
+	#output_mat[:,:,index] = label_mat
 
 	return label_mat
 

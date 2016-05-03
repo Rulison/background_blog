@@ -12,7 +12,8 @@ parser.add_argument('-v', '--version', type=int,
 parser.add_argument('-f', '--filepath',
                     help="Path to directory containing image sequence")
 parser.add_argument('-o', '--output',
-                    help="Path to output directory for predictions")
+                    help="Path to output directory for predictions",
+                    default="opencv_output")
 args = parser.parse_args()
 
 
@@ -46,9 +47,9 @@ def main():
     if not os.path.exists(args.output):
         os.mkdir(args.output)
 
-    images = []
     # Read images from specified directory
     filenames = os.listdir(args.filepath)
+    filenames = [x for x in filenames if x[0] != '.']
     masks = apply_background_subtractor(fgbg, filenames, args.filepath) 
     save_images(args.output + '/output_im_{}.png', masks)
 
