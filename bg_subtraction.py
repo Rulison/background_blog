@@ -28,6 +28,18 @@ def read_images(imgpath_prefix):
     data = np.array([np.array(img.getdata()) for img in data])
 
 def multivariate_normal_vec(x, mean, covariance, num_colors):
+    """
+    Performs a vectorized evaluation of a multivariate gaussian
+    pdf for a num_pixels-length array of observed pixel vaues. Optimized
+    NumPy operators such as einsum are used to optimize the calculation
+    of outer products and multiplication of outermost terms.
+    @param: x          A num_pixels-dimensional vector of observed pixel values
+    @param: mean       A K-by-num_pixels array of multivariate gaussian means
+    @param: covariance A K-by-num_pixels array of covariance matrices
+    @param: num_colors The number of color channels (dimensionality of Gaussians)
+    
+    Returns: K-by-num_pixels array of evaluated pdfs 
+    """
     c_inv = np.linalg.inv(covariance)
     mc = np.einsum('ijk,ijkl->ijl', (mean - x), c_inv)
     inner_terms = np.einsum('ijk,ijk->ij', mc, (mean - x))
@@ -41,25 +53,41 @@ def initialize_covariance(covariance):
             covariance[i, j] = np.diag(covariance[i, j][0])
 
 def label_image_simple(weights, normalized_likelihood,
-                       _unused_, _unused2_, num_iter=100):
+                       _unused_, _unused2_, num_iter=0):
+    """
+    Simple labeling scheme which assumes that Gaussian with highest prior weight
+    is the background. Takes an argmax over the normalized set of assignments
+    and assigns background if highest likelihood goes to "background" Gaussian
+    and foreground otherwise.
+    @param: weights               Prior weights of Gaussians
+    @param: normalized_likelihood Array of normalized partial assignments to
+                                    each background cluster
+    @param: _unused_              Same function header as other labeling schemes
+    @param: _unused2_             Same function header as other labeling schemes
+    @kwarg: num_iter              Same function header as other labeling schemes
+    """
     max_weights_idx = np.argmax(weights, axis=0)
     max_likelihood_idx = np.argmax(normalized_likelihood, axis=0)
     diff = max_weights_idx - max_likelihood_idx
     diff[np.nonzero(diff)] = 1
     return diff
 
+##############################################################################
+################################ Experimental ################################
+##############################################################################
 def label_image_sample(weights, normalized_likelihood,
-                       height, width, num_iter=100):
+                       height, width, kernel_width=3, num_iter=100):
     current_labels = \
         label_image_simple(weights, normalized_likelihood, height, width)
-    num_neighbors = sum_neighbors(np.ones(height*width), height, width, 3)
+    num_neighbors = sum_neighbors(np.ones(height*width), height, width, kernel_width)
     max_weights_idx = np.argmax(weights, axis=0)
-    unary_potentials = 1 - normalized_likelihood[max_weights_idx, 0]
+    unary_potentials = 1 - normalized_likelihood[max_weights_idx,
+                                                 np.arange(height*width)]
     for _ in range(num_iter):
-        num_fg_neighbors = sum_neighbors(current_labels, height, width, 3)
-        fg_bg_diff = (num_neighbors - num_fg_neighbors) / num_neighbors
-        prob_threshold = np.exp(-(unary_potentials + fg_bg_diff))
-        prob_threshold /= (prob_threshold + np.exp(-(2 - unary_potentials - fg_bg_diff)))
+        num_fg_neighbors = sum_neighbors(current_labels, height, width, kernel_width)
+        fg_bg_diff = (num_neighbors - num_fg_neighbors) / (num_neighbors + 1e-8)
+        prob_threshold = np.exp(-(-np.log(unary_potentials) + 5*fg_bg_diff))
+        prob_threshold /= (prob_threshold + np.exp(-(-np.log(1 - unary_potentials) + (1 - fg_bg_diff))))
         current_labels = np.random.random(current_labels.shape) < prob_threshold
     return current_labels
 
@@ -68,6 +96,10 @@ def sum_neighbors(input_vals, height, width, filter_width=3):
     filter_array = np.ones((filter_width, filter_width))
     convolved = convolve2d(reshaped_input, filter_array, mode='same')
     return (convolved - reshaped_input).flatten()
+
+##############################################################################
+##############################################################################
+##############################################################################
 
 def save_labels(labels, height, width):
     if not os.path.exists(args.output):
