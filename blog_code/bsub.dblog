@@ -1,0 +1,63 @@
+/**
+ * Prototyping background subtraction blog model
+ */
+
+type Component;
+type ImageX;
+type ImageY;
+
+origin ImageX X(Component);
+origin ImageY Y(Component);
+
+#Component(X=x, Y=y) ~ 3;
+distinct ImageX ImageX[5];
+distinct ImageY ImageY[5];
+fixed RealMatrix pixelRange = [0.0, 255.0];
+fixed RealMatrix varRange = [0.0, 1000.0];
+fixed RealMatrix variance = 1000.0 * eye(3);
+fixed RealMatrix WeightParams = [0.7; 0.2; 0.1];
+random RealMatrix Weight(ImageX x, ImageY y) ~ Dirichlet(WeightParams);
+
+random RealMatrix Mean(Component c, Timestep t) ~
+    if (t == @1) then UniformVector(pixelRange, pixelRange, pixelRange)
+    else Mean(c, prev(t))
+;
+
+random RealMatrix Variance(Component c, Timestep t) ~
+    if (t == @1) then UniformVector(varRange, varRange, varRange)
+    else Variance(c, prev(t))
+;
+
+random Component AssociatedComponent(ImageX x, ImageY y, Timestep t)
+    ~ UniformChoice({c for Component c : X(c) == x & Y(c) == y});
+
+random Real ComputeMinNorm(ImageX x, ImageY y, Timestep t)
+    ~ min({toReal(transpose(Mean(c, t)) * Mean(c, t)) for Component c : X(c) == x & Y(c) == y});
+
+random Real ComputeMaxVariance(ImageX x, ImageY y, Timestep t)
+    ~ max({toReal(transpose(Variance(c, t)) * Variance(c, t)) for Component c : X(c) == x & Y(c) == y});
+
+random Component ShadowComponent(ImageX x, ImageY y, Timestep t, Real minNorm)
+    ~ UniformChoice({c for Component c : X(c) == x & Y(c) == y & toReal(transpose(Mean(c, t)) * Mean(c, t)) == minNorm});
+
+random Component CarComponent(ImageX x, ImageY y, Timestep t, Real maxNorm)
+    ~ UniformChoice({c for Component c : X(c) == x & Y(c) == y & toReal(transpose(Variance(c, t)) * Variance(c, t)) == maxNorm});
+
+random RealMatrix Intensity(ImageX x, ImageY y, Timestep t)
+    ~ MultivarGaussian(
+        Mean(AssociatedComponent(x, y, t), t),
+        diag(Variance(AssociatedComponent(x, y, t), t)));
+
+random Boolean Label(ImageX x, ImageY y, Timestep t) ~
+    if (AssociatedComponent(x, y, t) == CarComponent(x, y, t, ComputeMaxVariance(x, y, t))) then BooleanDistrib(0.8)
+    else BooleanDistrib(0.2)
+;
+
+random Boolean Output(ImageX x1, ImageY y1, ImageX x2, ImageY y2, Timestep t) ~
+    case [Label(x1, y1, t), Label(x2, y2, t)] in {
+        [true, true] -> BooleanDistrib(0.9),
+        [false, true] -> BooleanDistrib(0.2),
+        [true, false] -> BooleanDistrib(0.2),
+        [false, false] -> BooleanDistrib(0.9)
+    };
+
