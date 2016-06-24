@@ -37,6 +37,14 @@ def enforce_spatial_constraint(img, output_file, t):
                 obs = obs_template.format(i, j, i, j + 1, t)
                 output_file.write(obs)
 
+def query_label(img, output_file, t):
+    height, width = img.shape[:2]
+    for i in range(height):
+        for j in range(width):
+            label = 'query Label(ImageX[{0}], ImageY[{1}], @{2});\n' \
+                         .format(i, j, t)
+            output_file.write(label)
+
 def main():
     shutil.copyfile('bsub.dblog', args.output_name)
     output_file = open(args.output_name, 'a')
@@ -44,14 +52,16 @@ def main():
 
     for t in range(min(len(img_filenames), args.num_timesteps)):
         img_name = img_filenames[t]
-        img = skio.imread(os.path.join(args.image_root, img_name))[:2, :2]
+        img = skio.imread(os.path.join(args.image_root, img_name))[:5, :5]
         read_img_intensity(img, output_file, t + 1)
 
     for t in range(min(len(img_filenames), args.num_timesteps)):
         img_name = img_filenames[t]
-        img = skio.imread(os.path.join(args.image_root, img_name))[:2, :2]
+        img = skio.imread(os.path.join(args.image_root, img_name))[:5, :5]
         enforce_spatial_constraint(img, output_file, t + 1)
 
+    for t in range(min(len(img_filenames), args.num_timesteps)):
+        query_label(img, output_file, t + 1)
     output_file.close()
 
 
