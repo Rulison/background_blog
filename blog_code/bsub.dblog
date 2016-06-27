@@ -20,7 +20,7 @@ random RealMatrix Mean(Component c, Timestep t) ~
 ;
 
 random RealMatrix Variance(Component c, Timestep t) ~
-    if (t == @1) then InverseWishart(eye(3), 4)
+    if (t == @1) then InverseWishart(eye(3), 3)
     else Variance(c, prev(t))
 ;
 
@@ -31,7 +31,7 @@ random Real ComputeMinNorm(ImageX x, ImageY y, Timestep t)
     ~ min({toReal(transpose(Mean(c, t)) * Mean(c, t)) for Component c : X(c) == x & Y(c) == y});
 
 random Real ComputeMaxVariance(ImageX x, ImageY y, Timestep t)
-    ~ max({toReal(transpose(Variance(c, t)) * Variance(c, t)) for Component c : X(c) == x & Y(c) == y});
+    ~ max({toReal(trace(transpose(Variance(c, t)) * Variance(c, t))) for Component c : X(c) == x & Y(c) == y});
 
 random Component ShadowComponent(ImageX x, ImageY y, Timestep t, Real minNorm)
     ~ UniformChoice({c for Component c : X(c) == x & Y(c) == y & toReal(transpose(Mean(c, t)) * Mean(c, t)) == minNorm});

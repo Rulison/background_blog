@@ -1,0 +1,57 @@
+/**
+ * Prototyping background subtraction blog model
+ */
+
+type Component;
+type ImageX;
+type ImageY;
+distinct ImageX ImageX[5];
+distinct ImageY ImageY[5];
+distinct Component Component[3];
+fixed RealMatrix pixelLow = [0.0, 0.0, 0.0];
+fixed RealMatrix pixelHigh = [255.0, 255.0, 255.0];
+// fixed RealMatrix variance = diag([1000.0, 1000.0, 1000.0]);
+fixed RealMatrix varLow = [0.0, 0.0, 0.0];
+fixed RealMatrix varHigh = [1000.0, 1000.0, 1000.0];
+random RealMatrix Mean(Component c, ImageX x, ImageY y, Timestep t) ~
+    if (t == @1) then UniformVector(pixelLow, pixelHigh)
+    else
+        if (AssociatedComponent(x, y, t) == c) then 0.9 * Mean(c, x, y, prev(t)) + 0.1 * Intensity(x, y, t)
+        else Mean(c, x, y, prev(t))
+;
+
+random RealMatrix Variance(Component c, ImageX x, ImageY y, Timestep t) ~
+    if (t == @1) then UniformVector(varLow, varHigh)
+    else Variance(c, x, y, prev(t))
+;
+
+random Component AssociatedComponent(ImageX x, ImageY y, Timestep t)
+    ~ UniformChoice({c for Component c});
+
+random Real ComputeMinNorm(ImageX x, ImageY y, Timestep t)
+    ~ min({toReal(transpose(Mean(c, x, y, t)) * Mean(c, x, y, t)) for Component c});
+
+random Real ComputeMaxVariance(ImageX x, ImageY y, Timestep t)
+    ~ max({toReal(trace(transpose(Variance(c, x, y, t)) * Variance(c, x, y, t))) for Component c});
+
+random Component ShadowComponent(ImageX x, ImageY y, Timestep t)
+    ~ UniformChoice({c for Component c : toReal(transpose(Mean(c, x, y, t)) * Mean(c, x, y, t)) == ComputeMinNorm(x, y, t)});
+
+random Component CarComponent(ImageX x, ImageY y, Timestep t)
+    ~ UniformChoice({c for Component c : toReal(trace(transpose(Variance(c, x, y, t)) * Variance(c, x, y, t))) == ComputeMaxVariance(x, y, t)});
+
+random RealMatrix Intensity(ImageX x, ImageY y, Timestep t)
+    ~ MultivarGaussian(
+        Mean(AssociatedComponent(x, y, t), x, y, t),
+        diag(Variance(AssociatedComponent(x, y, t), x, y, t)));
+
+random Boolean Label(ImageX x, ImageY y, Timestep t) ~
+    if (AssociatedComponent(x, y, t) == CarComponent(x, y, t)) then BooleanDistrib(0.8)
+    else BooleanDistrib(0.2)
+;
+
+random Boolean Output(ImageX x1, ImageY y1, ImageX x2, ImageY y2, Timestep t) ~
+    if (Label(x1, y1, t) == Label(x2, y2, t)) then BooleanDistrib(0.9)
+    else BooleanDistrib(0.2)
+;
+
