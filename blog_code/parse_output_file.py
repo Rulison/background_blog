@@ -66,15 +66,84 @@ def parse_means():
     for t, vals in imgs.iteritems():
         np_array_vals = np.array(vals)
         output_img = np.reshape(np_array_vals, (args.xlen, args.ylen, 3), 'F')
-        output_img = skimage.img_as_float(output_img)
+        output_img /= 255.
         skio.imsave(os.path.join(args.output_dir, 'img%d.png' % t), output_img)
+
+def parse_offline_sequence():
+    imgs = []
+    f = open(args.input_file, 'r')
+    state, x, y, timestep = None, None, None, 0
+    curr_val = {}
+    for line in f.readlines():
+        contents = line.split()
+        if 'query' in line:
+            if len(curr_val) > 0:
+                curr_img = imgs[t - 1]
+                if (max([(curr_val[i], i) for i in curr_val])[1] == 'Component[2]'):
+                    curr_img[y, x] = 1.0
+                else:
+                    curr_img[y, x] = 0.0
+            x, y = int(line[line.find('ImageX[') + 7]), int(line[line.find('ImageY[') + 7])
+            t = int(line[line.find('Time[') + 5:-3])
+            if (t > timestep):
+                imgs.append(np.zeros((args.ylen, args.xlen)))
+                timestep = t
+        elif 'loopend' in line:
+            if len(curr_val) > 0:
+                curr_img = imgs[t - 1]
+                if (max([(curr_val[i], i) for i in curr_val])[1] == 'Component[2]'):
+                    curr_img[y, x] = 1.0
+                else:
+                    curr_img[y, x] = 0.0
+        else:
+            curr_val[contents[0]] = float(contents[2])
+
+    for i in range(len(imgs)):
+        img = imgs[i]
+        skio.imsave(os.path.join(args.output_dir, 'img%d.png' % i), img)
+
+def parse_online_sequence():
+    imgs = []
+    f = open(args.input_file, 'r')
+    state, x, y, timestep = None, None, None, 0
+    curr_val = {}
+    for line in f.readlines():
+        contents = line.split()
+        if 'query' in line:
+            if len(curr_val) > 0:
+                curr_img = imgs[t - 1]
+                if (max([(curr_val[i], i) for i in curr_val])[1] == 'Component[2]'):
+                    curr_img[y, x] = 1.0
+                else:
+                    curr_img[y, x] = 0.0
+            x, y = int(line[line.find('ImageX[') + 7]), int(line[line.find('ImageY[') + 7])
+            t = int(line[line.find('@') + 1:-2])
+            if (t > timestep):
+                imgs.append(np.zeros((args.ylen, args.xlen)))
+                timestep = t
+        elif 'loopend' in line:
+            if len(curr_val) > 0:
+                curr_img = imgs[t - 1]
+                if (max([(curr_val[i], i) for i in curr_val])[1] == 'Component[2]'):
+                    curr_img[y, x] = 1.0
+                else:
+                    curr_img[y, x] = 0.0
+        elif 'TimeStep' not in line:
+            curr_val[contents[0]] = float(contents[2][1:])
+
+    for i in range(len(imgs)):
+        img = imgs[i]
+        skio.imsave(os.path.join(args.output_dir, 'img%d.png' % i), img)
+
 
 
 def main():
     if not os.path.isdir(args.output_dir):
         os.mkdir(args.output_dir)
     # parse_file()
-    parse_means()
+    # parse_means()
+    # parse_offline_sequence()
+    parse_online_sequence()
 
 if __name__ == "__main__":
     main()

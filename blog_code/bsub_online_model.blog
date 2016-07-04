@@ -1,0 +1,59 @@
+/**
+ * Prototyping background subtraction blog model
+ */
+
+type Component;
+type ImageX;
+type ImageY;
+distinct ImageX ImageX[5];
+distinct ImageY ImageY[5];
+distinct Component Component[3];
+fixed RealMatrix SmallVar = [30.0, 0.0, 0.0; 0.0, 30.0, 0.0; 0.0, 0.0, 30.0];
+fixed RealMatrix Mean1 = [120.0, 100.0, 100.0];
+fixed RealMatrix Mean2 = [140.0, 125.0, 160.0];
+fixed RealMatrix Mean3 = [180.0, 170.0, 170.0];
+fixed RealMatrix Var1 = [400.0, 256.0, 144.0; 256.0, 256.0, 196.0; 144.0, 196.0, 324.0];
+fixed RealMatrix Var2 = [40.0, 25.0, 9.0; 25.0, 25.0, 16.0; 9.0, 16.0, 20.0];
+fixed RealMatrix Var3 = [1600.0, 1600.0, 900.0; 1600.0, 2500.0, 2000.0; 900.0, 2000.0, 3000.0];
+
+random RealMatrix Mean(Component c, ImageX x, ImageY y, Timestep t) ~
+    if (c == Component[0]) then
+        if (t == @1) then MultivarGaussian(Mean1, Var1)
+        else MultivarGaussian(Mean(c, x, y, prev(t)), SmallVar)
+    else
+        if (c == Component[1]) then
+            if (t == @1) then MultivarGaussian(Mean2, Var2)
+            else MultivarGaussian(Mean(c, x, y, prev(t)), SmallVar)
+        else
+            if (t == @1) then MultivarGaussian(Mean3, Var3)
+            else MultivarGaussian(Mean(c, x, y, prev(t)), SmallVar)
+;
+
+random RealMatrix Variance(Component c, ImageX x, ImageY y, Timestep t) ~ 
+    if (c == Component[0]) then 
+        if (t == @1) then Var1 * UniformReal(0.5, 2)
+        else Variance(c, x, y, prev(t))
+    else
+        if (c == Component[1]) then 
+            if (t == @1) then Var2 * UniformReal(0.5, 2)
+            else Variance(c, x, y, prev(t))
+        else 
+            if (t == @1) then Var3 * UniformReal(0.5, 2)
+            else Variance(c, x, y, prev(t))
+;
+random Component AssociatedComponent(ImageX x, ImageY y, Timestep t) ~ Discrete([1.0, 1.0, 1.0]);
+
+random RealMatrix Intensity(ImageX x, ImageY y, Timestep t) ~
+    MultivarGaussian(Mean(AssociatedComponent(x, y, t), x, y, t),
+                     Variance(AssociatedComponent(x, y, t), x, y, t));
+
+random Boolean Label(ImageX x, ImageY y, Timestep t) ~
+    if (AssociatedComponent(x, y, t) == Component[2]) then BooleanDistrib(0.8)
+    else BooleanDistrib(0.1)
+;
+
+random Boolean Output(ImageX x1, ImageY y1, ImageX x2, ImageY y2, Timestep t) ~
+    if (Label(x1, y1, t) == Label(x2, y2, t)) then BooleanDistrib(0.9)
+    else BooleanDistrib(0.2)
+;
+

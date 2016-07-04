@@ -15,6 +15,10 @@ parser.add_argument('--num_timesteps', type=int, default=10,
     help="Number of timesteps to read (default: 10)")
 parser.add_argument('--output_name', default='output_blog.dblog',
     help="Name of output BLOG file (default: output_blog.dblog)")
+parser.add_argument('--offline', action='store_true',
+    help="Boolean flag to specify offline models")
+parser.add_argument('--query_type', default='label',
+    help="Type of query (label, mean, etc)")
 parser.add_argument('--swift', action='store_true',
     help="Boolean flag to specify swift conventions")
 parser.set_defaults(swift=False)
@@ -22,22 +26,29 @@ args = parser.parse_args()
 
 def read_img_intensity(img, output_file, t):
     height, width = img.shape[:2]
+    if args.offline:
+        obs_template = 'obs Intensity(ImageX[%d], ImageY[%d], Time[%d]) = ' \
+                       '[%0.1f; %0.1f; %0.1f];\n'
+    else:
+        obs_template = 'obs Intensity(ImageX[%d], ImageY[%d], @%d) = ' \
+                       '[%0.1f; %0.1f; %0.1f];\n'
+
     for i in range(height):
         for j in range(width):
             r, g, b = img[i, j].tolist()
-            if args.swift:
-                obs = 'obs Intensity(ImageX[%d], ImageY[%d], @%d) = ' \
-                      'transpose([%0.1f, %0.1f, %0.1f]);\n' \
-                      % (i, j, t, r, g, b)
-            else:
-                obs = 'obs Intensity(ImageX[{0}], ImageY[{1}], @{2}) = ' \
-                      '[{3}; {4}; {5}];\n'.format(i, j, t, r, g, b)
+            obs = obs_template % (i, j, t, r, g, b)
             output_file.write(obs)
+
 
 def enforce_spatial_constraint(img, output_file, t):
     height, width = img.shape[:2]
-    obs_template = 'obs Output(ImageX[{0}], ImageY[{1}], ' \
-                   'ImageX[{2}], ImageY[{3}], @{4}) = true;\n'
+    if args.offline:
+        obs_template = 'obs Output(ImageX[{0}], ImageY[{1}], ' \
+                       'ImageX[{2}], ImageY[{3}], Time[{4}]) = true;\n'
+    else:
+        obs_template = 'obs Output(ImageX[{0}], ImageY[{1}], ' \
+                       'ImageX[{2}], ImageY[{3}], @{4}) = true;\n'
+
     for i in range(height):
         for j in range(width):
             if i < height - 1:
@@ -47,31 +58,81 @@ def enforce_spatial_constraint(img, output_file, t):
                 obs = obs_template.format(i, j, i, j + 1, t)
                 output_file.write(obs)
 
+
 def query_label(img, output_file, t):
     height, width = img.shape[:2]
-    for i in range(height):
-        for j in range(width):
-            label = 'query Label(ImageX[{0}], ImageY[{1}], @{2});\n' \
-                         .format(i, j, t)
-            output_file.write(label)
+    if args.query_type == 'label':
+        if args.offline:
+            label_template = 'query Label(ImageX[{0}], ImageY[{1}], Time[{2}]);\n'
+        else:
+            label_template = 'query Label(ImageX[{0}], ImageY[{1}], @{2});\n'
+
+        for t in range(1, t + 1):
+            for i in range(height):
+                for j in range(width):
+                    label = label_template.format(i, j, t)
+                    output_file.write(label)
+    elif args.query_type == 'mean':
+        if args.offline:
+            label_template = 'query Mean(Component[{0}], ImageX[{1}], ' \
+                                        'ImageY[{2}]);\n' #\
+                             # 'query Variance(Component[{0}], ImageX[{1}], ' \
+                             #                'ImageY[{2}]);\n'
+        else:
+            label_template = 'query Mean(Component[{0}], ImageX[{1}], ' \
+                                        'ImageY[{2}], @{3});\n'
+
+        for c in range(3):
+            for i in range(height):
+                for j in range(width):
+                    if args.offline:
+                        label = label_template.format(c, i, j)
+                    else:
+                        label = label_template.format(c, i, j, t)
+                    output_file.write(label)
+    elif args.query_type == 'associated_component':
+        if args.offline:
+            label_template = 'query AssociatedComponent(ImageX[{0}], ' \
+                                          'ImageY[{1}], Time[{2}]);\n'
+        else:
+            label_template = 'query AssociatedComponent(ImageX[{0}], ' \
+                                                        'ImageY[{1}], @{2});\n'
+        for t in range(1, t + 1):
+            for i in range(height):
+                for j in range(width):
+                    label = label_template.format(i, j, t)
+                    output_file.write(label)
+
+
+def add_prev_offline(output_file, t):
+    output_file.write('fixed Time prevTime(Time t) =\n')
+    output_file.write('    case t in {\n')
+    output_file.write('        Time[0] -> Time[0],\n')
+    for i in range(1, t):
+        output_file.write('        Time[%d] -> Time[%d],\n' % (i, i - 1))
+    output_file.write('        Time[%d] -> Time[%d]\n' % (t, t - 1))
+    output_file.write('    };\n\n')
+
 
 def main():
     shutil.copyfile(args.input_name, args.output_name)
     output_file = open(args.output_name, 'a')
     img_filenames = os.listdir(args.image_root)
 
+    if args.offline:
+        add_prev_offline(output_file, args.num_timesteps)
+
     for t in range(min(len(img_filenames), args.num_timesteps)):
         img_name = img_filenames[t]
-        img = skio.imread(os.path.join(args.image_root, img_name))[:5, :5]
+        img = skio.imread(os.path.join(args.image_root, img_name))[:10, :10]
         read_img_intensity(img, output_file, t + 1)
 
     for t in range(min(len(img_filenames), args.num_timesteps)):
         img_name = img_filenames[t]
-        img = skio.imread(os.path.join(args.image_root, img_name))[:5, :5]
+        img = skio.imread(os.path.join(args.image_root, img_name))[:10, :10]
         enforce_spatial_constraint(img, output_file, t + 1)
 
-    for t in range(min(len(img_filenames), args.num_timesteps)):
-        query_label(img, output_file, t + 1)
+    query_label(img, output_file, t + 1)
     output_file.close()
 
 

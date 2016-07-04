@@ -15,9 +15,10 @@ fixed RealMatrix varLow = [0.0, 0.0, 0.0];
 fixed RealMatrix varHigh = [1000.0, 1000.0, 1000.0];
 random RealMatrix Mean(Component c, ImageX x, ImageY y, Timestep t) ~
     if (t == @1) then UniformVector(pixelLow, pixelHigh)
-    else
-        if (AssociatedComponent(x, y, t) == c) then 0.9 * Mean(c, x, y, prev(t)) + 0.1 * Intensity(x, y, t)
-        else Mean(c, x, y, prev(t))
+    else Mean(c, x, y, prev(t))
+    // else
+    //     if (AssociatedComponent(x, y, t) == c) then 0.9 * Mean(c, x, y, prev(t)) + 0.1 * Intensity(x, y, t)
+    //     else Mean(c, x, y, prev(t))
 ;
 
 random RealMatrix Variance(Component c, ImageX x, ImageY y, Timestep t) ~

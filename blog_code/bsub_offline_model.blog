@@ -10,12 +10,6 @@ distinct ImageX ImageX[5];
 distinct ImageY ImageY[5];
 distinct Time Time[33];
 distinct Component Component[3];
-fixed RealMatrix pixelLow = [0.0, 0.0, 0.0];
-fixed RealMatrix pixelHigh = [255.0, 255.0, 255.0];
-// fixed RealMatrix variance = diag([1000.0, 1000.0, 1000.0]);
-fixed RealMatrix varLow = [0.0, 0.0, 0.0];
-fixed RealMatrix varHigh = [1000.0, 1000.0, 1000.0];
-
 fixed RealMatrix Mean1 = [120.0, 100.0, 100.0];
 fixed RealMatrix Mean2 = [140.0, 125.0, 160.0];
 fixed RealMatrix Mean3 = [180.0, 170.0, 170.0];
@@ -23,40 +17,32 @@ fixed RealMatrix Var1 = [400.0, 256.0, 144.0; 256.0, 256.0, 196.0; 144.0, 196.0,
 fixed RealMatrix Var2 = [40.0, 25.0, 9.0; 25.0, 25.0, 16.0; 9.0, 16.0, 20.0];
 fixed RealMatrix Var3 = [1600.0, 1600.0, 900.0; 1600.0, 2500.0, 2000.0; 900.0, 2000.0, 3000.0];
 
-// random RealMatrix Mean(Component c, ImageX x, ImageY y) ~ UniformVector(pixelLow, pixelHigh);
-// random RealMatrix Variance(Component c, ImageX x, ImageY y) ~ UniformVector(varLow, varHigh);
-// random Component AssociatedComponent(ImageX x, ImageY y) ~ UniformChoice({c for Component c});
-random Component AssociatedComponent(ImageX x, ImageY y, Time t) ~ Discrete([1.0, 1.0, 1.0]);
-// random Real ComputeNorm(Component c, ImageX x, ImageY y) ~ toReal(transpose(Mean(c, x, y)) * Mean(c, x, y));
-// random Real ComputeVarNorm(Component c, ImageX x, ImageY y) ~ toReal(trace(transpose(Variance(c, x, y)) * Variance(c, x, y)));
-
-// random Real ComputeMinNorm(ImageX x, ImageY y)
-//     ~ min({toReal(transpose(Mean(c, x, y)) * Mean(c, x, y)) for Component c});
-// random Real ComputeMaxVariance(ImageX x, ImageY y)
-//     ~ max({toReal(trace(transpose(Variance(c, x, y)) * Variance(c, x, y))) for Component c});
-// random Component ShadowComponent(ImageX x, ImageY y)
-//     ~ UniformChoice({c for Component c : toReal(transpose(Mean(c, x, y)) * Mean(c, x, y)) == ComputeMinNorm(x, y)});
-// random Component CarComponent(ImageX x, ImageY y)
-//     ~ UniformChoice({c for Component c : toReal(trace(transpose(Variance(c, x, y)) * Variance(c, x, y))) == ComputeMaxVariance(x, y)});
-// random Component ShadowComponent(ImageX x, ImageY y) ~
-//     Discrete([1 / ComputeNorm(Component[0], x, y), 1 / ComputeNorm(Component[1], x, y), 1 / ComputeNorm(Component[2], x, y)]);
-// random Component CarComponent(ImageX x, ImageY y) ~
-//     Discrete([ComputeVarNorm(Component[0], x, y), ComputeVarNorm(Component[1], x, y), ComputeVarNorm(Component[2], x, y)]);
-
-random RealMatrix Intensity(ImageX x, ImageY y, Time t) ~ 
-    if (AssociatedComponent(x, y, t) == Component[0]) then MultivarGaussian(Mean1, Var1)
+random RealMatrix Mean(Component c, ImageX x, ImageY y) ~
+    if (c == Component[0]) then MultivarGaussian(Mean1, Var1)
     else
-        if (AssociatedComponent(x, y, t) == Component[1]) then MultivarGaussian(Mean2, Var2)
+        if (c == Component[1]) then MultivarGaussian(Mean2, Var2)
         else MultivarGaussian(Mean3, Var3)
 ;
 
+random RealMatrix Variance(Component c, ImageX x, ImageY y) ~
+    if (c == Component[0]) then Var1 * UniformReal(0.5, 2)
+    else
+        if (c == Component[1]) then Var2 * UniformReal(0.5, 2)
+        else Var3 * UniformReal(0.5, 2)
+;
+random Component AssociatedComponent(ImageX x, ImageY y, Time t) ~ Discrete([1.0, 1.0, 1.0]);
+
+random RealMatrix Intensity(ImageX x, ImageY y, Time t) ~
+    MultivarGaussian(Mean(AssociatedComponent(x, y, t), x, y),
+                     Variance(AssociatedComponent(x, y, t), x, y));
+
 random Boolean Label(ImageX x, ImageY y, Time t) ~
-//     if (AssociatedComponent(x, y) == CarComponent(x, y)) then BooleanDistrib(0.8)
     if (AssociatedComponent(x, y, t) == Component[2]) then BooleanDistrib(0.8)
-    else BooleanDistrib(0.2)
+    else BooleanDistrib(0.1)
 ;
 
 random Boolean Output(ImageX x1, ImageY y1, ImageX x2, ImageY y2, Time t) ~
     if (Label(x1, y1, t) == Label(x2, y2, t)) then BooleanDistrib(0.9)
     else BooleanDistrib(0.2)
 ;
+
