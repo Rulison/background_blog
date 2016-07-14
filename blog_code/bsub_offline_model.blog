@@ -8,7 +8,7 @@ type ImageY;
 type Time;
 distinct ImageX ImageX[5];
 distinct ImageY ImageY[5];
-distinct Time Time[33];
+distinct Time Time[12];
 distinct Component Component[3];
 fixed RealMatrix Mean1 = [120.0, 100.0, 100.0];
 fixed RealMatrix Mean2 = [140.0, 125.0, 160.0];
@@ -25,10 +25,10 @@ random RealMatrix Mean(Component c, ImageX x, ImageY y) ~
 ;
 
 random RealMatrix Variance(Component c, ImageX x, ImageY y) ~
-    if (c == Component[0]) then Var1 * UniformReal(0.5, 2)
+    if (c == Component[0]) then InvWishart(Var1, 4)
     else
-        if (c == Component[1]) then Var2 * UniformReal(0.5, 2)
-        else Var3 * UniformReal(0.5, 2)
+        if (c == Component[1]) then InvWishart(Var2, 4)
+        else InvWishart(Var3, 4)
 ;
 random Component AssociatedComponent(ImageX x, ImageY y, Time t) ~ Discrete([1.0, 1.0, 1.0]);
 
