@@ -7,6 +7,10 @@ import skimage.io as skio
 parser = argparse.ArgumentParser(
     description="Read frames from input file and generate BLOG file"
                 "for background subtraction.") 
+parser.add_argument('--crop', type=int,
+    help="Crop the image from the top-left corner to args.crop-by-args.crop")
+parser.add_argument('--init_mean',
+    help="Path to images for initialization of Particle Filter means")
 parser.add_argument('--image_root',
     help="Directory where images to process are located")
 parser.add_argument('--input_name', default='bsub.dblog',
@@ -19,6 +23,8 @@ parser.add_argument('--offline', action='store_true',
     help="Boolean flag to specify offline models")
 parser.add_argument('--query_type', default='label',
     help="Type of query (label, mean, etc)")
+parser.add_argument('--start_time', type=int, default=0,
+    help="Start of image sequence (default: 0)")
 parser.add_argument('--swift', action='store_true',
     help="Boolean flag to specify swift conventions")
 parser.set_defaults(swift=False)
@@ -39,6 +45,15 @@ def read_img_intensity(img, output_file, t):
             obs = obs_template % (i, j, t, r, g, b)
             output_file.write(obs)
 
+def init_mean_component(img, comp, output_file):
+    height, width = img.shape[:2]
+    mean_template = 'obs Mean(Component[%d], ImageX[%d], ImageY[%d], @%d) = ' \
+                    '[%0.1f; %0.1f; %0.1f];\n'
+    for i in range(height):
+        for j in range(width):
+            r, g, b = img[i, j].tolist()
+            mean = mean_template % (comp, i, j, 1, r, g, b)
+            output_file.write(mean)
 
 def enforce_spatial_constraint(img, output_file, t):
     height, width = img.shape[:2]
@@ -75,12 +90,14 @@ def query_label(img, output_file, t):
     elif args.query_type == 'mean':
         if args.offline:
             label_template = 'query Mean(Component[{0}], ImageX[{1}], ' \
-                                        'ImageY[{2}]);\n' #\
-                             # 'query Variance(Component[{0}], ImageX[{1}], ' \
-                             #                'ImageY[{2}]);\n'
+                                        'ImageY[{2}]);\n' \
+                             'query Variance(Component[{0}], ImageX[{1}], ' \
+                                            'ImageY[{2}]);\n'
         else:
             label_template = 'query Mean(Component[{0}], ImageX[{1}], ' \
-                                        'ImageY[{2}], @{3});\n'
+                                        'ImageY[{2}], @{3});\n' \
+                             'query Variance(Component[{0}], ImageX[{1}], ' \
+                                            'ImageY[{2}], @{3});\n'
 
         for c in range(3):
             for i in range(height):
@@ -124,12 +141,23 @@ def main():
 
     for t in range(min(len(img_filenames), args.num_timesteps)):
         img_name = img_filenames[t]
-        img = skio.imread(os.path.join(args.image_root, img_name))[:10, :10]
+        img = skio.imread(os.path.join(args.image_root, img_name))
+        if args.crop:
+            img = img[:args.crop, :args.crop]
         read_img_intensity(img, output_file, t + 1)
+
+    if args.init_mean:
+        for i in range(1, 4):
+            img = skio.imread(os.path.join(args.init_mean, 'img%d.png' % i))
+            if args.crop:
+                img = img[:args.crop, :args.crop]
+            init_mean_component(img, i - 1, output_file)
 
     for t in range(min(len(img_filenames), args.num_timesteps)):
         img_name = img_filenames[t]
-        img = skio.imread(os.path.join(args.image_root, img_name))[:10, :10]
+        img = skio.imread(os.path.join(args.image_root, img_name))
+        if args.crop:
+            img = img[:args.crop, :args.crop]
         enforce_spatial_constraint(img, output_file, t + 1)
 
     query_label(img, output_file, t + 1)
