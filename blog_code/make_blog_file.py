@@ -10,7 +10,9 @@ parser = argparse.ArgumentParser(
 parser.add_argument('--crop', type=int,
     help="Crop the image from the top-left corner to args.crop-by-args.crop")
 parser.add_argument('--init_mean',
-    help="Path to images for initialization of Particle Filter means")
+    help="Path to images for initialization of component means")
+parser.add_argument('--init_var',
+    help="Path to images for initialization of component variance")
 parser.add_argument('--image_root',
     help="Directory where images to process are located")
 parser.add_argument('--input_name', default='bsub.dblog',
@@ -45,15 +47,42 @@ def read_img_intensity(img, output_file, t):
             obs = obs_template % (i, j, t, r, g, b)
             output_file.write(obs)
 
+
 def init_mean_component(img, comp, output_file):
     height, width = img.shape[:2]
-    mean_template = 'obs Mean(Component[%d], ImageX[%d], ImageY[%d], @%d) = ' \
-                    '[%0.1f; %0.1f; %0.1f];\n'
+    if args.offline:
+        mean_template = 'obs Mean(Component[%d], ImageX[%d], ImageY[%d]) = ' \
+                        '[%0.3f; %0.3f; %0.3f];\n'
+    else:
+        mean_template = 'obs Mean(Component[%d], ImageX[%d], ImageY[%d], @%d) = ' \
+                        '[%0.3f; %0.3f; %0.3f];\n'
     for i in range(height):
         for j in range(width):
             r, g, b = img[i, j].tolist()
-            mean = mean_template % (comp, i, j, 1, r, g, b)
+            if args.offline:
+                mean = mean_template % (comp, i, j, r, g, b)
+            else:
+                mean = mean_template % (comp, i, j, args.start_time + 1, r, g, b)
             output_file.write(mean)
+
+
+def init_var_component(img, comp, output_file):
+    height, width = img.shape[:2]
+    if args.offline:
+        var_template = 'obs Variance(Component[%d], ImageX[%d], ImageY[%d]) = ' \
+                        '[%0.3f, %0.3f, %0.3f; %0.3f, %0.3f, %0.3f; %0.3f, %0.3f, %0.3f];\n'
+    else:
+        var_template = 'obs Variance(Component[%d], ImageX[%d], ImageY[%d], @%d) = ' \
+                        '[%0.3f, %0.3f, %0.3f; %0.3f, %0.3f, %0.3f; %0.3f, %0.3f, %0.3f];\n'
+    for i in range(height):
+        for j in range(width):
+            var_vals = img[i, j].flatten().tolist()
+            if args.offline:
+                var = var_template % tuple([comp, i, j] + var_vals)
+            else:
+                var = var_template % tuple([comp, i, j, args.start_time + 1] + var_vals)
+            output_file.write(var)
+
 
 def enforce_spatial_constraint(img, output_file, t):
     height, width = img.shape[:2]
@@ -146,12 +175,19 @@ def main():
             img = img[:args.crop, :args.crop]
         read_img_intensity(img, output_file, t + 1)
 
+    # Perform initialization of means/variance
     if args.init_mean:
-        for i in range(1, 4):
-            img = skio.imread(os.path.join(args.init_mean, 'img%d.png' % i))
+        for i in range(3):
+            img = np.load(os.path.join(args.init_mean, 'mean%d.npy' % i))
             if args.crop:
                 img = img[:args.crop, :args.crop]
-            init_mean_component(img, i - 1, output_file)
+            init_mean_component(img, i, output_file)
+    if args.init_var:
+        for i in range(3):
+            img = np.load(os.path.join(args.init_var, 'var%d.npy' % i))
+            if args.crop:
+                img = img[:args.crop, :args.crop]
+            init_var_component(img, i, output_file)
 
     for t in range(min(len(img_filenames), args.num_timesteps)):
         img_name = img_filenames[t]

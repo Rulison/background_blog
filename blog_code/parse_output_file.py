@@ -116,16 +116,18 @@ def parse_mean_var_offline():
                 curr_val.append(pixel_vals)
 
     for i in range(len(imgs)):
-        img = imgs[i] / 255.
-        skio.imsave(os.path.join(args.output_dir, 'img%d.png' % i), img)
-    colors = ['r', 'g', 'b']
+        img = imgs[i]
+        skio.imsave(os.path.join(args.output_dir, 'img%d.png' % i), img / 255.)
+        np.save(os.path.join(args.output_dir, 'mean%d.npy' % i), img)
+        np.save(os.path.join(args.output_dir, 'var%d.npy' % i), cov_mat[i])
+    colors = ['r', 'g', 'b', 'y', 'm']
 
     while True:
         input_str = raw_input("Please input desired x and y: ")
         x, y = [int(i) for i in input_str.split()]
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
-        for c in range(3):
+        for c in range(len(imgs)):
             mean, cov = imgs[c][y, x], cov_mat[c][y, x]
             X, Y, Z = np.random.multivariate_normal(mean, cov, 200).T
             ax.scatter(X, Y, Z, c=colors[c])
@@ -135,37 +137,67 @@ def parse_mean_var_offline():
         fig.show()
 
 
+def parse_static():
+    static = np.zeros((args.xlen, args.ylen))
+    f = open(args.input_file, 'r')
+    state, x, y = None, None, None
+    re_imx = re.compile('ImageX\[([0-9]+)\]')
+    re_imy = re.compile('ImageY\[([0-9]+)\]')
+    curr_val = []
+    for line in f.readlines():
+        contents = line.split()
+        if 'query' in line:
+            x = int(re_imx.findall(line)[0])
+            y = int(re_imy.findall(line)[0])
+        elif 'loopend' in line:
+            continue
+        else:
+            if line.split()[0] == 'true' and float(line.split()[2]) == 1.0:
+                static[y, x] = 1
+    skio.imsave(os.path.join(args.output_dir, 'static.png'), static)
+    np.savetxt(os.path.join(args.output_dir, 'static.txt'), static)
+
+
 def parse_offline_sequence():
     imgs = []
     f = open(args.input_file, 'r')
-    state, x, y, timestep = None, None, None, 0
+    state, x, y, timestep = None, None, None, -1
     curr_val = {}
+    re_com = re.compile('Component\[([0-9]+)\]')
+    re_imx = re.compile('ImageX\[([0-9]+)\]')
+    re_imy = re.compile('ImageY\[([0-9]+)\]')
+    re_tim = re.compile('Time\[([0-9]+)\]')
     for line in f.readlines():
         contents = line.split()
         if 'query' in line:
             if len(curr_val) > 0:
-                curr_img = imgs[t - 1]
+                curr_img = imgs[t]
                 if (max([(curr_val[i], i) for i in curr_val])[1] == 'Component[2]'):
                     curr_img[y, x] = 1.0
                 else:
                     curr_img[y, x] = 0.0
-            x, y = int(line[line.find('ImageX[') + 7]), int(line[line.find('ImageY[') + 7])
-            t = int(line[line.find('Time[') + 5:-3])
+            # x, y = int(line[line.find('ImageX[') + 7]), int(line[line.find('ImageY[') + 7])
+            x = int(re_imx.findall(line)[0])
+            y = int(re_imy.findall(line)[0])
+            # t = int(line[line.find('Time[') + 5:-3])
+            t = int(re_tim.findall(line)[0])
+            curr_val = {}
             if (t > timestep):
                 imgs.append(np.zeros((args.ylen, args.xlen)))
                 timestep = t
         elif 'loopend' in line:
             if len(curr_val) > 0:
-                curr_img = imgs[t - 1]
+                curr_img = imgs[t]
                 if (max([(curr_val[i], i) for i in curr_val])[1] == 'Component[2]'):
                     curr_img[y, x] = 1.0
                 else:
                     curr_img[y, x] = 0.0
+            curr_val = {}
         else:
             curr_val[contents[0]] = float(contents[2])
 
     for i in range(len(imgs)):
-        img = imgs[i]
+        img = skimage.img_as_ubyte(imgs[i])
         skio.imsave(os.path.join(args.output_dir, 'img%d.png' % i), img)
 
 def parse_online_sequence():
@@ -173,6 +205,10 @@ def parse_online_sequence():
     f = open(args.input_file, 'r')
     state, x, y, timestep = None, None, None, 0
     curr_val = {}
+    re_com = re.compile('Component\[([0-9]+)\]')
+    re_imx = re.compile('ImageX\[([0-9]+)\]')
+    re_imy = re.compile('ImageY\[([0-9]+)\]')
+    re_tim = re.compile('@([0-9]+)\)')
     for line in f.readlines():
         contents = line.split()
         if 'query' in line:
@@ -182,8 +218,12 @@ def parse_online_sequence():
                     curr_img[y, x] = 1.0
                 else:
                     curr_img[y, x] = 0.0
-            x, y = int(line[line.find('ImageX[') + 7]), int(line[line.find('ImageY[') + 7])
-            t = int(line[line.find('@') + 1:-2])
+            # x, y = int(line[line.find('ImageX[') + 7]), int(line[line.find('ImageY[') + 7])
+            x = int(re_imx.findall(line)[0])
+            y = int(re_imy.findall(line)[0])
+            # t = int(line[line.find('@') + 1:-2])
+            t = int(re_tim.findall(line)[0])
+            curr_val = {}
             if (t > timestep):
                 imgs.append(np.zeros((args.ylen, args.xlen)))
                 timestep = t
@@ -195,7 +235,7 @@ def parse_online_sequence():
                 else:
                     curr_img[y, x] = 0.0
         elif 'TimeStep' not in line:
-            curr_val[contents[0]] = float(contents[2][1:])
+            curr_val[contents[0]] = float(contents[2])
 
     for i in range(len(imgs)):
         img = imgs[i]
@@ -266,8 +306,10 @@ def parse_mean_var_particles():
                 cov_mat[comp][y, x, :] += np.reshape(cov_vals, (3, 3)) * weight
 
     for i in range(len(imgs)):
-        img = imgs[i] / 255.
-        skio.imsave(os.path.join(args.output_dir, 'img%d.png' % i), img)
+        img = imgs[i]
+        skio.imsave(os.path.join(args.output_dir, 'img%d.png' % i), img / 255.)
+        np.save(os.path.join(args.output_dir, 'mean%d.npy' % i), img)
+        np.save(os.path.join(args.output_dir, 'var%d.npy' % i), cov_mat[i])
 
     # fig, axes = plt.subplots(args.ylen, args.xlen,
     #                          subplot_kw=dict(projection='3d'))
@@ -335,6 +377,7 @@ def main():
                'online_sequence': parse_online_sequence,
                'mean_particles': parse_mean_particles,
                'mean_var_particles': parse_mean_var_particles,
+               'static': parse_static,
                'dblog_online': parse_dblog_online}
     if args.query_type in queries:
         queries[args.query_type]()
